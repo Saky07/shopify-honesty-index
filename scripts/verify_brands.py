@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Check which domains serve a usable public /products.json feed.
 
-brands.csv ships already verified, so this is a maintenance tool rather than a
-required step: run it to re-check the list, or to vet candidates before adding
-them. It writes a report alongside, and never edits brands.csv itself.
+brands.csv ships verified, so this is maintenance rather than a required step.
+Use it to re-check the list or vet new candidates. It writes a report and never
+edits brands.csv.
 
     python scripts/verify_brands.py
     python scripts/verify_brands.py --input candidates.csv --output report.csv
@@ -75,8 +75,8 @@ def check(row: dict, attempts: int, base_delay: float) -> dict:
         result["status"] = "no_variants"
         return result
 
-    # compare_at_price is what the whole study measures. A store that never
-    # exposes it cannot be scored, so that shows up here rather than in November.
+    # compare_at_price is what the study measures, so a store that never
+    # exposes it needs flagging now rather than in November.
     result["has_compare_at"] = str(
         any("compare_at_price" in (v or {}) for v in variants)
     ).lower()

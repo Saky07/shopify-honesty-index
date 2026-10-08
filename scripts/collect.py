@@ -8,9 +8,8 @@ Writes four files per run under data/snapshots/<date>/
     run_log.csv           per-store outcome, so a failure is recorded not silent
     summary.json          counts, timing, and how hard we got throttled
 
-Splitting the catalogue out keeps the daily commit small: titles, tags and
-vendors are written once, on the day a product first appears, instead of being
-repeated in every snapshot for the rest of the collection window.
+The catalogue is split out so titles, tags and vendors are written once, on the
+day a product first appears, rather than in all 51 snapshots.
 
     python scripts/collect.py
     python scripts/collect.py --limit 5 --out data/test
@@ -61,8 +60,8 @@ CATALOG_COLUMNS = [
 def fetch_store(domain: str, delay: float) -> tuple[list[dict], list[dict], dict]:
     """Page through one store's public catalogue.
 
-    Every failure mode returns cleanly. One bad store must never abort the run,
-    because an aborted run costs a baseline day that cannot be recovered later.
+    Every failure returns cleanly. One bad store must not abort the run, since
+    a lost baseline day cannot be recovered.
     """
     session = make_session()
     prices: list[dict] = []
@@ -106,10 +105,8 @@ def fetch_store(domain: str, delay: float) -> tuple[list[dict], list[dict], dict
                     continue
                 log["variants"] += 1
 
-                # product_id is deliberately absent here: variant_id already
-                # identifies the row, and new_products.parquet carries the
-                # variant -> product mapping once. Repeating it in every daily
-                # snapshot costs about a third of the file for nothing.
+                # No product_id here: variant_id identifies the row and the
+                # catalogue holds the mapping. Repeating it costs ~20% a day.
                 prices.append(
                     {
                         "domain": domain,

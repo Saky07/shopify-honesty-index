@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Render the day's post image from whatever snapshots exist.
 
-A 52-day series needs something true to say on day 19, and the collector runs
-unattended, so the daily news has to come out of the data rather than be invented.
-The number this tracks is the share of variants displaying a struck-through "was"
-price, which is measurable from day one, long before Black Friday: it is the
-standing level of discount signalling across the sample, and the line it traces
-over seven weeks is the story.
+Tracks the share of variants showing a struck-through "was" price. That is
+measurable from day one rather than only at the sale, so there is a real number
+to post on any given day, and its drift over seven weeks is the story.
 
     python scripts/daily_card.py
     python scripts/daily_card.py --data data/snapshots --out posts/
@@ -37,9 +34,8 @@ MUTED = "#898781"
 GRID = "#e1e0d9"
 BASELINE = "#c3c2b7"
 SERIES = "#2a78d6"
-# matplotlib warns once per text object for every family it cannot resolve, so
-# handing it a wishlist produces dozens of lines per run. Resolve once instead,
-# against what is actually installed: Helvetica on macOS, DejaVu on CI.
+# matplotlib warns once per text object for each family it cannot resolve, so
+# resolve once against what is installed instead of passing a wishlist.
 FONT_PREFERENCE = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
 
 
@@ -84,11 +80,9 @@ def load_daily(root: Path) -> pd.DataFrame:
 
 
 def window(daily: pd.DataFrame) -> tuple[date, int]:
-    """Day 1 is the first snapshot on disk, not a date written into the source.
+    """Day 1 is the first snapshot on disk, not a hardcoded date.
 
-    Snapshot dates are UTC, so the first one depends on when collection actually
-    started rather than on when the project was planned. Deriving it means the
-    counter cannot drift from the data it is counting.
+    Snapshot dates are UTC, so collection may start a day off from the plan.
     """
     start = daily["date"].iloc[0]
     return start, (SALE - start).days + 1
@@ -167,8 +161,7 @@ def render(daily: pd.DataFrame, out_path: Path, stores: int | None) -> dict:
     if len(x) > 1:
         ax.fill_between(x, y, min(y) - 1, color=SERIES, alpha=0.07, zorder=2)
 
-    # Only the current point is marked and labelled. A number on every point is
-    # noise, and the reader is being told one thing.
+    # Only the current point is marked. A dot on every day is noise.
     ax.plot(
         [x[-1]],
         [y[-1]],

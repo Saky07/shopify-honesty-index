@@ -11,7 +11,7 @@ import requests
 
 DEFAULT_UA = (
     "shopify-honesty-index/1.0 (research project; "
-    "+https://github.com/Saky07/shopify-honesty-index)"
+    "+https://github.com/REPLACE_ME/shopify-honesty-index)"
 )
 
 # Public, documented Shopify storefront endpoint. Read-only, no auth.
@@ -21,9 +21,8 @@ TIMEOUT = (10, 25)  # connect, read
 PAGE_SIZE = 250
 MAX_PAGES = 40  # 40 * 250 = 10,000 products per store, a generous ceiling
 
-# Statuses that say something about our request rate rather than about the
-# store, so they are worth retrying. Everything else (404, 403, 401, non-JSON)
-# is a real answer and retrying it just wastes time.
+# Worth retrying: these describe our request rate, not the store. A 404/403/401
+# or non-JSON body is a real answer, so retrying it just wastes time.
 TRANSIENT = frozenset(
     {
         "http_429",
@@ -44,25 +43,17 @@ TRANSIENT = frozenset(
 
 
 class RateLimiter:
-    """One request rate shared by every thread in the process.
+    """One request rate shared by every thread.
 
-    Shopify throttles by client IP across its whole storefront fleet, not per
-    store, so per-domain politeness is no protection: six threads each pausing a
-    second between pages still look like six requests a second to the thing doing
-    the limiting. Early runs lost whole blocks of stores to this, and since the
-    block burned was simply whichever went first, the losses looked random rather
-    than like a rate problem.
+    Shopify throttles per client IP across all storefronts, not per store, so
+    spacing requests within a worker buys nothing. The sleep happens under the
+    lock, which serialises the start of every request process-wide.
 
-    The interval adapts. Every 429 doubles it, a long run of clean responses
-    eases it back toward the floor. The sleep happens while holding the lock,
-    which is deliberate: it serialises the *start* of every request, so the
-    process as a whole never exceeds the rate.
+    429 doubles the interval, a long clean run eases it back to the floor.
     """
 
-    # A 429 is a timed penalty, not a nudge. Doubling from a one-second floor
-    # creeps back into the throttle again and again while the window is still
-    # open, which is how a run loses sixty stores in a row; the first refusal
-    # has to jump straight to a wait long enough to outlast it.
+    # 429 is a timed penalty. Doubling up from ~1s just walks back into it
+    # while the window is open, so the first refusal jumps straight to this.
     PENALTY_FLOOR = 20.0
 
     def __init__(self, min_interval: float = 0.8, max_interval: float = 120.0) -> None:
@@ -75,11 +66,7 @@ class RateLimiter:
         self.throttle_events = 0
 
     def configure(self, min_interval: float, max_interval: float = 120.0) -> None:
-        """Reset the rate in place.
-
-        In place, rather than by swapping in a new object, so that modules which
-        imported the singleton at import time keep pointing at the live one.
-        """
+        """Reset the rate in place, so importers keep the live object."""
         with self._lock:
             self._floor = min_interval
             self._ceiling = max_interval
@@ -157,11 +144,10 @@ def get_json(
     attempts: int = 3,
     base_delay: float = 1.5,
 ) -> tuple[Any | None, str]:
-    """GET a URL and parse JSON.
+    """GET and parse JSON, returning (payload, status).
 
-    Returns (payload, status). The payload is None on any failure and the status
-    always carries a short machine-readable reason, so a store that drops out of
-    a run is explainable from the log rather than simply missing.
+    Payload is None on failure; status always carries a short reason so a store
+    missing from a run is explainable from the log.
     """
     status = "unknown"
 
@@ -199,9 +185,8 @@ def get_json(
                 return None, f"http_{response.status_code}"
 
         if attempt < attempts - 1:
-            # A 429 waits considerably longer than a flaky connection: the
-            # throttle window runs to tens of seconds, and a brisk retry just
-            # burns an attempt against a door that is still shut.
+            # Throttle windows run to tens of seconds, so a brisk retry just
+            # burns an attempt.
             factor = 4.0 if status == "http_429" else 1.0
             time.sleep(base_delay * factor * (2**attempt) + random.uniform(0, 1.5))
 

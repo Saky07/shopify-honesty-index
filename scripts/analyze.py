@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Score advertised discounts against each variant's own price history.
 
-The question is not "is there a discount badge" but "is this price actually
-lower than what this exact variant normally sells for". Every variant is judged
-against itself, so the result does not depend on comparing across brands.
+Every variant is judged against its own history, not against other brands.
 
-Definitions, all per variant:
+Per variant:
 
   claimed   = (compare_at_price - price) / compare_at_price   on the sale date
   baseline  = median observed price, excluding the blackout window and the sale
@@ -20,7 +18,7 @@ A variant that advertises a discount is then one of:
   overstated  0 < real < claimed/2 less than half the advertised saving is real
   honest      real >= claimed/2
 
-Reported separately, because they are different behaviours:
+Reported separately, since they are different behaviours:
 
   permanent_sale  compare_at_price was set on >= 90% of observed days, so the
                   "regular price" the discount is measured against never applied
@@ -49,12 +47,10 @@ PRICE_COLUMNS = ["date", "domain", "variant_id", "price", "compare_at_price", "a
 
 
 def load_prices(root: Path) -> pd.DataFrame:
-    """Read every snapshot, taking only the columns the scoring needs.
+    """Read every snapshot, taking only the columns scoring needs.
 
-    Naming them explicitly rather than reading whole files keeps the analysis
-    immune to schema drift across a 51-day window: early snapshots carry a
-    product_id column that later ones drop, and a bare read would concatenate
-    them into a half-null column nothing uses.
+    Named explicitly because early snapshots carry a product_id column that
+    later ones drop, and a bare read would concat them into a half-null column.
     """
     paths = sorted(root.glob("*/prices.parquet"))
     if not paths:
@@ -155,10 +151,9 @@ def classify(
     def label(row) -> str:
         if not row["advertised"]:
             return "no_claim"
-        # Tolerance band, not a bare <= 0 test. Retail prices wobble by small
-        # amounts for reasons unrelated to discounting (rounding, currency, A/B
-        # tests), and a hard zero boundary misfiles those wobbles as real
-        # savings. Anything within the band is no saving in any meaningful sense.
+        # Band rather than <= 0: prices wobble for reasons unrelated to
+        # discounting (rounding, currency, A/B tests) and a hard zero misfiles
+        # those as real savings.
         if row["real"] <= phantom_tolerance:
             return "phantom"
         if row["real"] < row["claimed"] / 2:
@@ -205,14 +200,11 @@ def summarise(df: pd.DataFrame) -> dict:
 
 
 def per_group(df: pd.DataFrame, col: str, min_n: int = 0) -> pd.DataFrame:
-    """Aggregate verdicts by a column, suppressing groups too small to report.
+    """Aggregate verdicts by a column, dropping groups too small to report.
 
-    Creator and celebrity stores often carry only 20 to 40 products, so a single
-    brand's percentage swings wildly on a handful of variants. Publishing such a
-    number next to a 2,000-variant retailer's invites a false comparison and,
-    worse, puts a named small merchant at the top of a "worst offenders" list on
-    noise alone. Groups below the floor are dropped from brand-level output and
-    still counted in the segment and headline figures.
+    Creator stores often carry 20-40 products, where a handful of variants swings
+    the percentage several points. Below the floor they are left out of
+    brand-level output but still counted in the category and headline figures.
     """
     adv = df[df["advertised"]]
     if adv.empty:

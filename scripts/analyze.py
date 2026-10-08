@@ -45,11 +45,29 @@ import numpy as np
 import pandas as pd
 
 
+PRICE_COLUMNS = ["date", "domain", "variant_id", "price", "compare_at_price", "available"]
+
+
 def load_prices(root: Path) -> pd.DataFrame:
+    """Read every snapshot, taking only the columns the scoring needs.
+
+    Naming them explicitly rather than reading whole files keeps the analysis
+    immune to schema drift across a 51-day window: early snapshots carry a
+    product_id column that later ones drop, and a bare read would concatenate
+    them into a half-null column nothing uses.
+    """
     paths = sorted(root.glob("*/prices.parquet"))
     if not paths:
         raise SystemExit(f"no snapshots found under {root}")
-    frames = [pd.read_parquet(p) for p in paths]
+
+    frames = []
+    for path in paths:
+        if path.stat().st_size == 0:
+            continue
+        frames.append(pd.read_parquet(path, columns=PRICE_COLUMNS))
+    if not frames:
+        raise SystemExit(f"every snapshot under {root} was empty")
+
     df = pd.concat(frames, ignore_index=True)
     df["date"] = pd.to_datetime(df["date"])
     return df
@@ -300,7 +318,6 @@ def main() -> int:
     keep = [
         "domain",
         "category",
-        "product_id",
         "variant_id",
         "price",
         "compare_at_price",

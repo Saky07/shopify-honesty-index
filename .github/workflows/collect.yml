@@ -32,6 +32,9 @@ jobs:
 
       - name: Collect snapshot
         env:
+          # Actions pipes stdout, so Python block-buffers it and the log stays
+          # empty until the run ends. Unbuffered keeps progress visible live.
+          PYTHONUNBUFFERED: "1"
           HONESTY_INDEX_UA: >-
             shopify-honesty-index/1.0 (research project;
             +https://github.com/${{ github.repository }})

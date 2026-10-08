@@ -106,10 +106,13 @@ def fetch_store(domain: str, delay: float) -> tuple[list[dict], list[dict], dict
                     continue
                 log["variants"] += 1
 
+                # product_id is deliberately absent here: variant_id already
+                # identifies the row, and new_products.parquet carries the
+                # variant -> product mapping once. Repeating it in every daily
+                # snapshot costs about a third of the file for nothing.
                 prices.append(
                     {
                         "domain": domain,
-                        "product_id": int(product_id),
                         "variant_id": int(variant_id),
                         "price": to_float(variant.get("price")),
                         "compare_at_price": to_float(variant.get("compare_at_price")),

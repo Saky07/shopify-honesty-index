@@ -37,7 +37,20 @@ MUTED = "#898781"
 GRID = "#e1e0d9"
 BASELINE = "#c3c2b7"
 SERIES = "#2a78d6"
-FONT = ["system-ui", "DejaVu Sans", "Helvetica", "Arial", "sans-serif"]
+# matplotlib warns once per text object for every family it cannot resolve, so
+# handing it a wishlist produces dozens of lines per run. Resolve once instead,
+# against what is actually installed: Helvetica on macOS, DejaVu on CI.
+FONT_PREFERENCE = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
+
+
+def pick_font() -> str:
+    from matplotlib import font_manager
+
+    installed = {f.name for f in font_manager.fontManager.ttflist}
+    for name in FONT_PREFERENCE:
+        if name in installed:
+            return name
+    return plt.rcParams["font.sans-serif"][0]
 
 
 def load_daily(root: Path) -> pd.DataFrame:
@@ -101,7 +114,7 @@ def render(daily: pd.DataFrame, out_path: Path, stores: int | None) -> dict:
     days_left = (SALE - latest["date"]).days
 
     fig = plt.figure(figsize=(16, 9), dpi=100, facecolor=SURFACE)
-    plt.rcParams["font.family"] = FONT
+    plt.rcParams["font.family"] = pick_font()
 
     # Header band: the counter is the series' spine, so it leads.
     fig.text(

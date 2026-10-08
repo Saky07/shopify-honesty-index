@@ -1,0 +1,65 @@
+name: daily snapshot
+
+on:
+  schedule:
+    # 09:12 UTC daily. Deliberately off the hour: every scheduled job on GitHub
+    # queues at :00, and a delayed run is a lost baseline day.
+    - cron: "12 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-snapshot
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Collect snapshot
+        env:
+          HONESTY_INDEX_UA: >-
+            shopify-honesty-index/1.0 (research project;
+            +https://github.com/${{ github.repository }})
+        run: python scripts/collect.py
+
+      - name: Commit snapshot
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshots
+          if git diff --staged --quiet; then
+            echo "nothing collected, not committing"
+            exit 1
+          fi
+          SUMMARY=$(ls -d data/snapshots/*/ | tail -1)
+          git commit -m "snapshot $(basename "$SUMMARY")"
+          # The repo may have moved on while this job ran.
+          for i in 1 2 3; do
+            git pull --rebase --autostash && git push && exit 0
+            sleep 5
+          done
+          exit 1
+
+      - name: Upload run log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log
+          path: data/snapshots/*/run_log.csv
+          if-no-files-found: ignore

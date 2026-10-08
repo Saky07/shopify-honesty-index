@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+data/test/
+results/test/
+posts/
+data/smoke/
+scripts/scratch.py

@@ -205,13 +205,17 @@ def render(daily: pd.DataFrame, out_path: Path, stores: int | None) -> dict:
     )
 
     ax.set_xlim(0.5, total_days + 0.5)
-    pad = max(1.5, (max(y) - min(y)) * 0.35) if len(y) > 1 else 2.0
+
+    # Pad from how far the series actually moves. A fixed floor of a point or
+    # more flattens a real swing into a straight line, since this number lives
+    # in a band a couple of points wide.
+    spread = (max(y) - min(y)) if len(y) > 1 else 0.0
+    pad = max(0.35, spread * 0.45) if len(y) > 1 else 1.5
     ax.set_ylim(max(0, min(y) - pad), max(y) + pad)
 
-    # Early on the whole series sits inside half a point, where whole-number
-    # ticks print "40%" three times. Add a decimal until the range earns one.
-    span = ax.get_ylim()[1] - ax.get_ylim()[0]
-    places = 1 if span < 4 else 0
+    # Judge precision by how much the data moves, not by the padded axis: a
+    # one-point swing on a four-point axis still needs the decimal.
+    places = 0 if spread >= 8 else 1
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.{places}f}%"))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=4, prune=None))
     ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=1)
@@ -259,9 +263,19 @@ def main() -> int:
     ap.add_argument("--data", default="data/snapshots")
     ap.add_argument("--out", default="posts")
     ap.add_argument("--brands", default="brands.csv")
+    ap.add_argument(
+        "--as-of",
+        default="",
+        help="render the card as it stood on this date (YYYY-MM-DD)",
+    )
     args = ap.parse_args()
 
     daily = load_daily(Path(args.data))
+    if args.as_of:
+        cutoff = date.fromisoformat(args.as_of)
+        daily = daily[daily["date"] <= cutoff].reset_index(drop=True)
+        if daily.empty:
+            raise SystemExit(f"no snapshots on or before {cutoff}")
     start, total_days = window(daily)
     day_n = (daily.iloc[-1]["date"] - start).days + 1
     latest_excluded = int(daily.iloc[-1].get("excluded", 0))

@@ -13,6 +13,7 @@ Writes posts/day-NN.png at 1600x900, sized for a social post.
 from __future__ import annotations
 
 import argparse
+import csv
 import sys
 from datetime import date
 from pathlib import Path
@@ -22,7 +23,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.ticker import FuncFormatter
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 SALE = date(2026, 11, 27)
 
@@ -49,24 +50,53 @@ def pick_font() -> str:
     return plt.rcParams["font.sans-serif"][0]
 
 
+def complete_stores(snapshot_dir: Path) -> set[str] | None:
+    """Domains that returned their whole catalogue that day.
+
+    A store cut off mid-pagination contributes a different slice each run, which
+    moves the daily percentage for reasons unrelated to pricing: bonobos gave
+    7,096 variants one day and 23,518 the next before erroring at a different
+    point. Counting only complete stores keeps the series comparable.
+    """
+    log = snapshot_dir / "run_log.csv"
+    if not log.exists():
+        return None
+    with log.open(newline="", encoding="utf-8") as fh:
+        return {r["domain"] for r in csv.DictReader(fh) if r.get("status") == "ok"}
+
+
 def load_daily(root: Path) -> pd.DataFrame:
     rows = []
     for path in sorted(root.glob("*/prices.parquet")):
         if path.stat().st_size == 0:
             continue
         try:
-            df = pd.read_parquet(path, columns=["date", "compare_at_price", "price"])
+            df = pd.read_parquet(
+                path, columns=["date", "domain", "compare_at_price", "price"]
+            )
         except Exception as exc:
             print(f"  warn: skipping {path}: {exc}", file=sys.stderr)
             continue
         if df.empty:
             continue
+
+        keep = complete_stores(path.parent)
+        partial = 0
+        if keep is not None:
+            before = df["domain"].nunique()
+            df = df[df["domain"].isin(keep)]
+            partial = before - df["domain"].nunique()
+            if df.empty:
+                continue
+
         flagged = df["compare_at_price"].notna() & (
             df["compare_at_price"] > df["price"]
         )
         rows.append(
             {
                 "date": pd.to_datetime(df["date"].iloc[0]).date(),
+                "stores": int(df["domain"].nunique()),
+                "excluded": partial,
                 "variants": len(df),
                 "flagged": int(flagged.sum()),
                 "pct": 100.0 * flagged.sum() / len(df),
@@ -146,8 +176,9 @@ def render(daily: pd.DataFrame, out_path: Path, stores: int | None) -> dict:
         color=INK_2,
     )
     sample = f"{int(latest['flagged']):,} of {int(latest['variants']):,} variants"
-    if stores:
-        sample += f" across {stores} Shopify stores"
+    shown = int(latest.get("stores", 0)) or stores
+    if shown:
+        sample += f" across {shown} Shopify stores"
     fig.text(0.055, 0.553, sample, fontsize=18, color=MUTED)
 
     # The trend. One series, so no legend: the subtitle names it.
@@ -177,7 +208,12 @@ def render(daily: pd.DataFrame, out_path: Path, stores: int | None) -> dict:
     pad = max(1.5, (max(y) - min(y)) * 0.35) if len(y) > 1 else 2.0
     ax.set_ylim(max(0, min(y) - pad), max(y) + pad)
 
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}%"))
+    # Early on the whole series sits inside half a point, where whole-number
+    # ticks print "40%" three times. Add a decimal until the range earns one.
+    span = ax.get_ylim()[1] - ax.get_ylim()[0]
+    places = 1 if span < 4 else 0
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.{places}f}%"))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=4, prune=None))
     ax.grid(axis="y", color=GRID, linewidth=0.8, zorder=1)
     ax.set_axisbelow(True)
     for side in ("top", "right", "left"):
@@ -228,6 +264,7 @@ def main() -> int:
     daily = load_daily(Path(args.data))
     start, total_days = window(daily)
     day_n = (daily.iloc[-1]["date"] - start).days + 1
+    latest_excluded = int(daily.iloc[-1].get("excluded", 0))
     info = render(
         daily,
         Path(args.out) / f"day-{day_n:02d}.png",
@@ -238,6 +275,8 @@ def main() -> int:
     print(f"\n  day {info['day']} of {total_days}, {info['days_left']} to Black Friday")
     print(f"  {info['pct']}% of variants showing a was-price")
     print(f"  {info['flagged']:,} of {info['variants']:,} variants")
+    if latest_excluded:
+        print(f"  {latest_excluded} store(s) excluded today for incomplete pagination")
 
     if len(daily) > 1:
         change = daily["pct"].iloc[-1] - daily["pct"].iloc[-2]

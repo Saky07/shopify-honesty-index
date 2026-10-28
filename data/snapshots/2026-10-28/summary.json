@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-28",
+  "stores_attempted": 243,
+  "stores_ok": 240,
+  "stores_failed": 3,
+  "variants": 976624,
+  "new_variants": 18224,
+  "seconds": 638.9,
+  "throttle_events": 0,
+  "final_rate_interval": 1.0
+}
